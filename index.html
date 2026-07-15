@@ -103,7 +103,6 @@ footer button{background:var(--tinta);color:#fff;border:none;border-radius:8px;
   <button id="btn-instalar">Instalar en el teléfono</button>
 </footer>
 
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script>
 // ------------------ Configuración ------------------
 const TEMAS = [
@@ -119,11 +118,10 @@ const CONFIABILIDAD = {
   'efe.com':.9,'elpais.com':.85,'expansion.com':.85,'eleconomista.es':.8,
   'cnbc.com':.8,'marketwatch.com':.75,'forbes.com':.7,'yahoo.com':.65
 };
-const API = 'https://api.gdeltproject.org/api/v2/doc/doc';
+const API = 'https://myshorty-proxy.nanoprocuza.workers.dev';
 
 // ------------------ Estado ------------------
 let temaActivo = TEMAS[0];
-let grafico = null;
 
 // ------------------ Utilidades ------------------
 const $ = id => document.getElementById(id);
@@ -189,18 +187,57 @@ function pintarBarometro(serie){
 }
 
 function pintarGrafico(serie){
-  const ctx = $('grafico').getContext('2d');
-  if (grafico) grafico.destroy();
-  grafico = new Chart(ctx, {
-    type:'line',
-    data:{ labels: serie.map(p=>p.x.slice(4,8).replace(/(\d\d)(\d\d)/,'$2/$1')),
-      datasets:[{ data: serie.map(p=>p.y), borderColor:'#0E2233', borderWidth:1.5,
-        pointRadius:0, tension:.35, fill:{target:{value:0},
-        above:'rgba(14,124,91,.10)', below:'rgba(178,57,47,.10)'} }] },
-    options:{ plugins:{legend:{display:false}}, maintainAspectRatio:false,
-      scales:{ x:{ticks:{maxTicksLimit:7,font:{family:'IBM Plex Mono',size:10}},grid:{display:false}},
-        y:{ticks:{font:{family:'IBM Plex Mono',size:10}},grid:{color:'#EDEFEE'}} } }
+  const c = $('grafico');
+  const W = c.clientWidth || 320, H = 190;
+  const dpr = window.devicePixelRatio || 1;
+  c.width = W*dpr; c.height = H*dpr;
+  const ctx = c.getContext('2d');
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+  ctx.clearRect(0,0,W,H);
+  if (serie.length < 2) return;
+
+  const vals = serie.map(p=>p.y);
+  let min = Math.min(...vals, 0), max = Math.max(...vals, 0);
+  const holgura = (max-min)*0.15 || 1; min -= holgura; max += holgura;
+  const izq = 40, arriba = 10, abajo = 24, der = 6;
+  const X = i => izq + (W-izq-der)*i/(serie.length-1);
+  const Y = v => arriba + (H-arriba-abajo)*(1-(v-min)/(max-min));
+
+  // Rejilla horizontal con etiquetas
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.textAlign = 'right'; ctx.textBaseline = 'middle';
+  [max-holgura, 0, min+holgura].forEach(v => {
+    const y = Y(v);
+    ctx.strokeStyle = v===0 ? '#B9C2C7' : '#EDEFEE';
+    ctx.beginPath(); ctx.moveTo(izq, y); ctx.lineTo(W-der, y); ctx.stroke();
+    ctx.fillStyle = '#5C6B76'; ctx.fillText(v.toFixed(1), izq-6, y);
   });
+
+  // Camino de la línea de tono
+  const camino = new Path2D();
+  serie.forEach((p,i)=> i ? camino.lineTo(X(i),Y(p.y)) : camino.moveTo(X(0),Y(p.y)));
+
+  // Relleno: verde sobre cero, rojo bajo cero
+  const y0 = Y(0);
+  const area = new Path2D(camino);
+  area.lineTo(X(serie.length-1), y0); area.lineTo(X(0), y0); area.closePath();
+  ctx.save(); ctx.beginPath(); ctx.rect(0,0,W,y0); ctx.clip();
+  ctx.fillStyle='rgba(14,124,91,.12)'; ctx.fill(area); ctx.restore();
+  ctx.save(); ctx.beginPath(); ctx.rect(0,y0,W,H-y0); ctx.clip();
+  ctx.fillStyle='rgba(178,57,47,.12)'; ctx.fill(area); ctx.restore();
+
+  // Línea principal
+  ctx.strokeStyle='#0E2233'; ctx.lineWidth=1.6; ctx.lineJoin='round';
+  ctx.stroke(camino);
+
+  // Fechas: primera, media y última
+  ctx.fillStyle='#5C6B76'; ctx.textBaseline='alphabetic';
+  [[0,'left'],[Math.floor((serie.length-1)/2),'center'],[serie.length-1,'right']]
+    .forEach(([i,al])=>{
+      const f = serie[i].x;
+      ctx.textAlign = al;
+      ctx.fillText(f.slice(6,8)+'/'+f.slice(4,6), X(i), H-6);
+    });
 }
 
 function pintarNoticias(articulos){
@@ -223,18 +260,32 @@ async function cargarTema(tema){
     b.classList.toggle('activo', b.dataset.id === tema.id));
   $('noticias').innerHTML = '<div class="estado">Cargando titulares…</div>';
   $('interpretacion').textContent = 'Cargando datos…';
+  let hubo_error = false;
+
   try{
-    const [serie, articulos] = await Promise.all([cargarTono(tema), cargarNoticias(tema)]);
+    const serie = await cargarTono(tema);
     pintarBarometro(serie);
     pintarGrafico(serie);
+  }catch(e){
+    hubo_error = true;
+    $('interpretacion').textContent = 'Sin datos de tono por ahora';
+    console.error('tono:', e);
+  }
+
+  try{
+    const articulos = await cargarNoticias(tema);
     pintarNoticias(articulos);
+  }catch(e){
+    hubo_error = true;
+    $('noticias').innerHTML =
+      '<div class="estado">No se pudieron cargar los titulares.<br><small>' +
+      (e.message || e) + '</small></div>';
+    console.error('noticias:', e);
+  }
+
+  if (!hubo_error){
     $('reloj').textContent = 'Actualizado ' +
       new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) + ' · GDELT';
-  }catch(e){
-    $('noticias').innerHTML =
-      '<div class="estado">No se pudo conectar con GDELT.<br><small>' +
-      (e.message || e) + '</small></div>';
-    console.error(e);
   }
 }
 
