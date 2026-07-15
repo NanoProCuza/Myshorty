@@ -147,12 +147,14 @@ async function gdelt(params){
   Object.entries(params).forEach(([k,v]) => u.searchParams.set(k,v));
   const r = await fetch(u);
   if (!r.ok) throw new Error('GDELT respondió ' + r.status);
-  return r.json();
+  const texto = await r.text();
+  try { return JSON.parse(texto); }
+  catch { throw new Error('GDELT dijo: ' + texto.slice(0,140)); }
 }
 
 async function cargarTono(tema){
   const datos = await gdelt({
-    query:`${tema.query} ${IDIOMAS}`, mode:'timelinetone',
+    query:`(${tema.query}) ${IDIOMAS}`, mode:'timelinetone',
     timespan:'7d', format:'json'
   });
   const serie = datos?.timeline?.[0]?.data ?? [];
@@ -161,7 +163,7 @@ async function cargarTono(tema){
 
 async function cargarNoticias(tema){
   const datos = await gdelt({
-    query:`${tema.query} ${IDIOMAS}`, mode:'artlist',
+    query:`(${tema.query}) ${IDIOMAS}`, mode:'artlist',
     maxrecords:25, timespan:'1d', sort:'datedesc', format:'json'
   });
   return datos?.articles ?? [];
@@ -230,7 +232,8 @@ async function cargarTema(tema){
       new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) + ' · GDELT';
   }catch(e){
     $('noticias').innerHTML =
-      '<div class="estado">No se pudo conectar con GDELT. Revisa tu conexión e intenta de nuevo.</div>';
+      '<div class="estado">No se pudo conectar con GDELT.<br><small>' +
+      (e.message || e) + '</small></div>';
     console.error(e);
   }
 }
