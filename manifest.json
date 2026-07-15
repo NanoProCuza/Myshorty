@@ -1,6 +1,6 @@
 {
-  "name": "Pulso Bursátil",
-  "short_name": "Pulso",
+  "name": "MyShorty",
+  "short_name": "MyShorty",
   "description": "Sentimiento del mercado según la cobertura mediática mundial (GDELT)",
   "start_url": "./index.html",
   "display": "standalone",
