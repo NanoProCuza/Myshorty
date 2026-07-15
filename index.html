@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0E2233">
+<title>Pulso Bursátil — sentimiento del mercado en tiempo real</title>
+<link rel="manifest" href="manifest.json">
+<link rel="icon" href="icon-192.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;700&family=IBM+Plex+Sans:wght@400;500&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+:root{
+  --tinta:#0E2233; --papel:#F7F8F6; --carta:#FFFFFF;
+  --alza:#0E7C5B; --baja:#B2392F; --neutro:#8A8F93;
+  --linea:#DDE1E0; --texto:#22303B; --texto-2:#5C6B76; --acento:#0E2233;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'IBM Plex Sans',sans-serif;background:var(--papel);color:var(--texto);min-height:100vh}
+header{background:var(--tinta);color:#F2F5F4;padding:18px 20px 16px}
+header h1{font-family:'Archivo',sans-serif;font-weight:700;font-size:20px;letter-spacing:.5px}
+header p{font-size:12px;color:#9FB1BC;margin-top:2px;font-family:'IBM Plex Mono',monospace}
+.temas{display:flex;gap:8px;overflow-x:auto;padding:14px 20px 4px;-webkit-overflow-scrolling:touch}
+.tema{border:1px solid var(--linea);background:var(--carta);color:var(--texto-2);
+  padding:8px 14px;border-radius:999px;font-size:13px;white-space:nowrap;cursor:pointer;font-family:inherit}
+.tema.activo{background:var(--tinta);color:#fff;border-color:var(--tinta)}
+main{padding:12px 20px 90px;max-width:760px;margin:0 auto}
+.carta{background:var(--carta);border:1px solid var(--linea);border-radius:12px;padding:18px;margin-top:14px}
+.etiqueta{font-family:'IBM Plex Mono',monospace;font-size:11px;text-transform:uppercase;
+  letter-spacing:1px;color:var(--texto-2);margin-bottom:10px}
+/* Barómetro — elemento firma */
+.barometro{position:relative;height:54px;margin:8px 0 4px}
+.escala{position:absolute;top:24px;left:0;right:0;height:6px;border-radius:3px;
+  background:linear-gradient(90deg,var(--baja),#E4C24A 50%,var(--alza))}
+.aguja{position:absolute;top:8px;width:2px;height:38px;background:var(--tinta);
+  transform:translateX(-1px);transition:left 1s cubic-bezier(.2,.8,.2,1)}
+.aguja::after{content:'';position:absolute;top:-6px;left:-4px;border:5px solid transparent;
+  border-top-color:var(--tinta)}
+.lectura{display:flex;justify-content:space-between;align-items:baseline;margin-top:10px}
+.lectura strong{font-family:'Archivo',sans-serif;font-size:34px;font-weight:700}
+.lectura .signo-alza{color:var(--alza)} .lectura .signo-baja{color:var(--baja)} .lectura .signo-neutro{color:var(--neutro)}
+.lectura span{font-size:12px;color:var(--texto-2)}
+.extremos{display:flex;justify-content:space-between;font-size:11px;color:var(--texto-2);
+  font-family:'IBM Plex Mono',monospace;margin-top:2px}
+canvas{width:100%!important;height:190px!important}
+.noticia{padding:13px 0;border-bottom:1px solid var(--linea)}
+.noticia:last-child{border-bottom:none}
+.noticia a{color:var(--texto);text-decoration:none;font-size:14px;line-height:1.45;font-weight:500}
+.noticia a:hover{text-decoration:underline}
+.meta{display:flex;gap:8px;align-items:center;margin-top:5px;font-size:11px;
+  color:var(--texto-2);font-family:'IBM Plex Mono',monospace}
+.sello{padding:1px 7px;border-radius:4px;font-size:10px;letter-spacing:.5px}
+.sello.alta{background:#E3F1EB;color:var(--alza)}
+.sello.media{background:#FBF3DA;color:#8A6D1A}
+.sello.baja{background:#F4E3E1;color:var(--baja)}
+.estado{text-align:center;padding:30px;color:var(--texto-2);font-size:13px}
+.aviso{font-size:11px;color:var(--texto-2);text-align:center;padding:18px 20px;line-height:1.6}
+footer{position:fixed;bottom:0;left:0;right:0;background:var(--carta);
+  border-top:1px solid var(--linea);padding:10px;text-align:center}
+footer button{background:var(--tinta);color:#fff;border:none;border-radius:8px;
+  padding:10px 22px;font-size:13px;font-family:inherit;cursor:pointer}
+@media (prefers-reduced-motion: reduce){.aguja{transition:none}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Pulso bursátil</h1>
+  <p id="reloj">Tono mediático global · GDELT</p>
+</header>
+
+<nav class="temas" id="temas"></nav>
+
+<main>
+  <section class="carta">
+    <div class="etiqueta">Barómetro de tono · últimas 24 h</div>
+    <div class="barometro">
+      <div class="escala"></div>
+      <div class="aguja" id="aguja" style="left:50%"></div>
+    </div>
+    <div class="extremos"><span>negativo</span><span>neutral</span><span>positivo</span></div>
+    <div class="lectura">
+      <strong id="tono" class="signo-neutro">—</strong>
+      <span id="interpretacion">Cargando datos…</span>
+    </div>
+  </section>
+
+  <section class="carta">
+    <div class="etiqueta">Evolución del tono · 7 días</div>
+    <canvas id="grafico"></canvas>
+  </section>
+
+  <section class="carta">
+    <div class="etiqueta">Titulares recientes</div>
+    <div id="noticias"><div class="estado">Cargando titulares…</div></div>
+  </section>
+
+  <p class="aviso">El tono mide el lenguaje de la cobertura mediática, no predice precios.
+  Esta herramienta es informativa y no constituye asesoría financiera.</p>
+</main>
+
+<footer id="pie-instalar" style="display:none">
+  <button id="btn-instalar">Instalar en el teléfono</button>
+</footer>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script>
+// ------------------ Configuración ------------------
+const TEMAS = [
+  { id:'mercados',  nombre:'Mercados',      query:'"stock market" OR "wall street" OR "bolsa de valores"' },
+  { id:'fed',       nombre:'Fed e inflación', query:'"federal reserve" OR inflation OR "tasas de interes" OR inflacion' },
+  { id:'geo',       nombre:'Geopolítica',   query:'geopolitical OR sanctions OR "conflicto" OR "middle east"' },
+  { id:'tech',      nombre:'Tecnología',    query:'"artificial intelligence" OR semiconductors OR "inteligencia artificial"' },
+  { id:'energia',   nombre:'Energía',       query:'"oil prices" OR opec OR "precio del petroleo"' },
+];
+const IDIOMAS = '(sourcelang:spanish OR sourcelang:english)';
+const CONFIABILIDAD = {
+  'reuters.com':1,'apnews.com':1,'bloomberg.com':.95,'ft.com':.95,'wsj.com':.95,
+  'efe.com':.9,'elpais.com':.85,'expansion.com':.85,'eleconomista.es':.8,
+  'cnbc.com':.8,'marketwatch.com':.75,'forbes.com':.7,'yahoo.com':.65
+};
+const API = 'https://api.gdeltproject.org/api/v2/doc/doc';
+
+// ------------------ Estado ------------------
+let temaActivo = TEMAS[0];
+let grafico = null;
+
+// ------------------ Utilidades ------------------
+const $ = id => document.getElementById(id);
+function sello(dominio){
+  const c = CONFIABILIDAD[dominio] ?? 0.4;
+  if (c >= 0.8) return '<span class="sello alta">fuente alta</span>';
+  if (c >= 0.6) return '<span class="sello media">fuente media</span>';
+  return '<span class="sello baja">sin verificar</span>';
+}
+function fechaLegible(seendate){
+  try{
+    const d = new Date(seendate.replace(
+      /(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z/, '$1-$2-$3T$4:$5:$6Z'));
+    return d.toLocaleString('es', {day:'numeric', month:'short', hour:'2-digit', minute:'2-digit'});
+  }catch{ return ''; }
+}
+
+// ------------------ GDELT ------------------
+async function gdelt(params){
+  const u = new URL(API);
+  Object.entries(params).forEach(([k,v]) => u.searchParams.set(k,v));
+  const r = await fetch(u);
+  if (!r.ok) throw new Error('GDELT respondió ' + r.status);
+  return r.json();
+}
+
+async function cargarTono(tema){
+  const datos = await gdelt({
+    query:`${tema.query} ${IDIOMAS}`, mode:'timelinetone',
+    timespan:'7d', format:'json'
+  });
+  const serie = datos?.timeline?.[0]?.data ?? [];
+  return serie.map(p => ({ x: p.date, y: p.value }));
+}
+
+async function cargarNoticias(tema){
+  const datos = await gdelt({
+    query:`${tema.query} ${IDIOMAS}`, mode:'artlist',
+    maxrecords:25, timespan:'1d', sort:'datedesc', format:'json'
+  });
+  return datos?.articles ?? [];
+}
+
+// ------------------ Render ------------------
+function pintarBarometro(serie){
+  // Promedio de los últimos ~24h de puntos (GDELT da ~4 puntos/día en 7d)
+  const ultimos = serie.slice(-4);
+  const prom = ultimos.length
+    ? ultimos.reduce((s,p)=>s+p.y,0) / ultimos.length : 0;
+  // El tono GDELT suele moverse entre -10 y +10; recortamos a ±8 para la aguja
+  const rec = Math.max(-8, Math.min(8, prom));
+  $('aguja').style.left = (50 + rec/8*50) + '%';
+  const t = $('tono');
+  t.textContent = (prom>0?'+':'') + prom.toFixed(2);
+  t.className = prom > 0.5 ? 'signo-alza' : prom < -0.5 ? 'signo-baja' : 'signo-neutro';
+  $('interpretacion').textContent =
+    prom > 1.5 ? 'Cobertura claramente positiva' :
+    prom > 0.5 ? 'Cobertura levemente positiva' :
+    prom < -1.5 ? 'Cobertura claramente negativa' :
+    prom < -0.5 ? 'Cobertura levemente negativa' : 'Cobertura neutral';
+}
+
+function pintarGrafico(serie){
+  const ctx = $('grafico').getContext('2d');
+  if (grafico) grafico.destroy();
+  grafico = new Chart(ctx, {
+    type:'line',
+    data:{ labels: serie.map(p=>p.x.slice(4,8).replace(/(\d\d)(\d\d)/,'$2/$1')),
+      datasets:[{ data: serie.map(p=>p.y), borderColor:'#0E2233', borderWidth:1.5,
+        pointRadius:0, tension:.35, fill:{target:{value:0},
+        above:'rgba(14,124,91,.10)', below:'rgba(178,57,47,.10)'} }] },
+    options:{ plugins:{legend:{display:false}}, maintainAspectRatio:false,
+      scales:{ x:{ticks:{maxTicksLimit:7,font:{family:'IBM Plex Mono',size:10}},grid:{display:false}},
+        y:{ticks:{font:{family:'IBM Plex Mono',size:10}},grid:{color:'#EDEFEE'}} } }
+  });
+}
+
+function pintarNoticias(articulos){
+  const caja = $('noticias');
+  if (!articulos.length){
+    caja.innerHTML = '<div class="estado">Sin titulares en las últimas 24 h para este tema.</div>';
+    return;
+  }
+  caja.innerHTML = articulos.map(a => `
+    <div class="noticia">
+      <a href="${a.url}" target="_blank" rel="noopener">${a.title}</a>
+      <div class="meta">${sello(a.domain)}<span>${a.domain}</span><span>${fechaLegible(a.seendate)}</span></div>
+    </div>`).join('');
+}
+
+// ------------------ Flujo ------------------
+async function cargarTema(tema){
+  temaActivo = tema;
+  document.querySelectorAll('.tema').forEach(b =>
+    b.classList.toggle('activo', b.dataset.id === tema.id));
+  $('noticias').innerHTML = '<div class="estado">Cargando titulares…</div>';
+  $('interpretacion').textContent = 'Cargando datos…';
+  try{
+    const [serie, articulos] = await Promise.all([cargarTono(tema), cargarNoticias(tema)]);
+    pintarBarometro(serie);
+    pintarGrafico(serie);
+    pintarNoticias(articulos);
+    $('reloj').textContent = 'Actualizado ' +
+      new Date().toLocaleTimeString('es',{hour:'2-digit',minute:'2-digit'}) + ' · GDELT';
+  }catch(e){
+    $('noticias').innerHTML =
+      '<div class="estado">No se pudo conectar con GDELT. Revisa tu conexión e intenta de nuevo.</div>';
+    console.error(e);
+  }
+}
+
+function iniciarTemas(){
+  $('temas').innerHTML = TEMAS.map(t =>
+    `<button class="tema" data-id="${t.id}">${t.nombre}</button>`).join('');
+  document.querySelectorAll('.tema').forEach(b =>
+    b.addEventListener('click', () => cargarTema(TEMAS.find(t=>t.id===b.dataset.id))));
+}
+
+// ------------------ PWA ------------------
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('sw.js');
+let eventoInstalar = null;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); eventoInstalar = e;
+  $('pie-instalar').style.display = 'block';
+});
+$('btn-instalar').addEventListener('click', async () => {
+  if (!eventoInstalar) return;
+  eventoInstalar.prompt();
+  await eventoInstalar.userChoice;
+  $('pie-instalar').style.display = 'none';
+});
+
+// ------------------ Arranque ------------------
+iniciarTemas();
+cargarTema(temaActivo);
+setInterval(() => cargarTema(temaActivo), 15*60*1000); // refresco cada 15 min
+</script>
+</body>
+</html>
